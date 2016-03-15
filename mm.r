@@ -1,4 +1,5 @@
 library(plyr)
+library(rvest)
 
 est_elo = function() {
   elo = c(2097,2075,2052,2078,1972,2045,2014,1956,1938,2033,1915,1973,1953,1910,1876,1938,1933,1867,1837,1788,1887,1893,1871,1904,1846,1916,1896,1832,1872,1794,1815,1914,1798,1788,1772,1787,1814,1824,1751,1824,1756,1792,1777,1690,1768,1733,1734,1735,1730,1722,1740,1759,1667,1663,1610,1737,1708,1613,1635,1638,1553,1623,1544,1392,1477,1488,1420,1417)
@@ -86,8 +87,35 @@ result_set = function(n, games_template) {
   }))
 }
 
+load_popularity = function() {
+  all_df = adply(1:6, 1, function(i) {
+    html = read_html(paste0("https://tournament.fantasysports.yahoo.com/t1/group/all/pickdistribution?round=", i))
+    teams = html_text(html_nodes(table, xpath = "//table[@class='Tst-table Table']//a"))
+    percents = html_text(html_nodes(table, xpath = "//table[@class='Tst-table Table']//em"))
+
+    return(data.frame(round_name = 2**(7 - i), team = teams, percent = as.numeric(percents), stringsAsFactors = F))
+  })
+
+  all_df[all_df$team == "Bakersfield", "team"] = "Cal State Bakersfield"
+  all_df[all_df$team == "Florida Gulf Coast/Fair. Dicki", "team"] = "Florida Gulf Coast"
+  all_df[all_df$team == "Holy Cross/Southern", "team"] = "Southern"
+  all_df[all_df$team == "Little Rock", "team"] = "Arkansas-Little Rock"
+  all_df[all_df$team == "Michigan/Tulsa", "team"] = "Tulsa"
+  all_df[all_df$team == "UNC Asheville", "team"] = "North Carolina-Asheville"
+  all_df[all_df$team == "UNCW", "team"] = "North Carolina-Wilmington"
+  all_df[all_df$team == "UNI", "team"] = "Northern Iowa"
+  all_df[all_df$team == "USC", "team"] = "Southern California"
+  all_df[all_df$team == "Vanderbilt/Wichita St.", "team"] = "Wichita State"
+  all_df[all_df$team == "VCU", "team"] = "Virginia Commonwealth"
+
+  all_df$team = factor(all_df$team)
+
+  return(all_df[, c("round_name", "team", "percent")])
+}
+
 elod = load_elod()
 games_template = load_games_template(elod)
+popularity = load_popularity()
 
 # entry = sim_tourney(games_template)
 # entry_score(entry, result)
