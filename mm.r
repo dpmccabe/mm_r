@@ -87,13 +87,13 @@ result_set = function(n, games_template) {
   }))
 }
 
-load_popularity = function() {
+load_popularity = function(games_template) {
   all_df = adply(1:6, 1, function(i) {
     html = read_html(paste0("https://tournament.fantasysports.yahoo.com/t1/group/all/pickdistribution?round=", i))
     teams = html_text(html_nodes(table, xpath = "//table[@class='Tst-table Table']//a"))
     percents = html_text(html_nodes(table, xpath = "//table[@class='Tst-table Table']//em"))
 
-    return(data.frame(round_name = 2**(7 - i), team = teams, percent = as.numeric(percents), stringsAsFactors = F))
+    return(data.frame(round_name = 2**(7 - i), team = teams, percent = as.numeric(percents) / 100, stringsAsFactors = F))
   })
 
   all_df[all_df$team == "Bakersfield", "team"] = "Cal State Bakersfield"
@@ -108,14 +108,51 @@ load_popularity = function() {
   all_df[all_df$team == "Vanderbilt/Wichita St.", "team"] = "Wichita State"
   all_df[all_df$team == "VCU", "team"] = "Virginia Commonwealth"
 
-  all_df$team = factor(all_df$team)
+  all_df$team = factor(all_df$team, levels = levels(games_template$team))
 
   return(all_df[, c("round_name", "team", "percent")])
 }
 
+other_entry = function(popularity, games_template) {
+  games = games_template
+
+  while(any(games$played == F)) {
+    round_i = which(games$played == F & !is.na(games$team))
+
+    winners_probs = adply(seq(from = round_i[1], to = max(round_i) - 1, by = 2), 1, function(i) {
+      teams = games[c(i, i + 1),]
+
+      win_probs = aaply(1:2, 1, function(j) {
+        return(popularity[popularity$round_name == teams[1, "round_name"] & popularity$team == teams[j, "team"], "percent"])
+      })
+
+      win_probs = win_probs / sum(win_probs)
+      team1_win = runif(1) <= win_probs[1]
+
+      return(data.frame(winprob = win_probs, winner = c(team1_win, !team1_win)))
+    })
+
+    games[round_i, "played"] = T
+    games[round_i, c("winprob", "winner")] = winners_probs[, c("winprob", "winner")]
+
+    next_round_i = which(games$round_name == games[round_i[1], "round_name"] / 2)
+    games[next_round_i, c("team", "seed", "elo")] = subset(games[round_i,], winner == T, select = c("team", "seed", "elo"))
+  }
+
+  return(games)
+}
+
+other_entry_set = function(n, popularity, games_template) {
+  return(alply(1:n, 1, function(i) {
+    result = other_entry(popularity, games_template)
+    return(list(result))
+  }))
+}
+
 elod = load_elod()
 games_template = load_games_template(elod)
-popularity = load_popularity()
-
+popularity = load_popularity(games_template)
+results = result_set(100, games_template)
+other_entries = other_entry_set(3, popularity, games_template)
 # entry = sim_tourney(games_template)
 # entry_score(entry, result)
