@@ -33,7 +33,7 @@ load_elod = function() {
 }
 
 load_games_template = function(elod) {
-  games_template = data.frame(round_name = c(rep(64, 2 * 4 * 8), rep(32, 2 * 4 * 4), rep(16, 2 * 4 * 2), rep(8, 2 * 4 * 1), rep(4, 4), rep(2, 2)), region = c(c(rep("South", 16), rep("West", 16), rep("East", 16), rep("Midwest", 16)), c(rep("South", 8), rep("West", 8), rep("East", 8), rep("Midwest", 8)), c(rep("South", 4), rep("West", 4), rep("East", 4), rep("Midwest", 4)), c(rep("South", 2), rep("West", 2), rep("East", 2), rep("Midwest", 2)), rep("South-West", 2), rep("East-Midwest", 2), rep("South-West-East-Midwest", 2)), team = "", seed = NA, elo = NA, played = F, winner = F)
+  games_template = data.frame(round_name = c(rep(64, 2 * 4 * 8), rep(32, 2 * 4 * 4), rep(16, 2 * 4 * 2), rep(8, 2 * 4 * 1), rep(4, 4), rep(2, 2)), region = c(c(rep("South", 16), rep("West", 16), rep("East", 16), rep("Midwest", 16)), c(rep("South", 8), rep("West", 8), rep("East", 8), rep("Midwest", 8)), c(rep("South", 4), rep("West", 4), rep("East", 4), rep("Midwest", 4)), c(rep("South", 2), rep("West", 2), rep("East", 2), rep("Midwest", 2)), rep("South-West", 2), rep("East-Midwest", 2), rep("South-West-East-Midwest", 2)), team = "", seed = NA, elo = NA, played = F, winprob = NA, winner = F)
 
   games_template$team = factor(NA, levels = levels(elod$team))
 
@@ -48,29 +48,27 @@ load_games_template = function(elod) {
   return(games_template)
 }
 
-winner = function(teams) {
-  elo_diff = teams[1, "elo"] - teams[2, "elo"]
-  team1_win_prob = 1 / (10^(-elo_diff / 400) + 1)
-  return(ifelse(runif(1) <= team1_win_prob, 1, 2))
-}
-
 sim_tourney = function(games_template) {
   games = games_template
 
   while(any(games$played == F)) {
     round_i = which(games$played == F & !is.na(games$team))
 
-    winners_i = aaply(seq(from = round_i[1], to = max(round_i) - 1, by = 2), 1, function(i) {
+    winners_probs = adply(seq(from = round_i[1], to = max(round_i) - 1, by = 2), 1, function(i) {
       teams = games[c(i, i + 1),]
-      winner_i = winner(teams)
-      return(i + winner_i -1)
+
+      elo_diff = teams[1, "elo"] - teams[2, "elo"]
+      team1_win_prob = 1 / (10^(-elo_diff / 400) + 1)
+      team1_win = runif(1) <= team1_win_prob
+
+      return(data.frame(winprob = c(team1_win_prob, 1 - team1_win_prob), winner = c(team1_win, !team1_win)))
     })
 
     games[round_i, "played"] = T
-    games[winners_i, "winner"] = T
+    games[round_i, c("winprob", "winner")] = winners_probs[, c("winprob", "winner")]
 
     next_round_i = which(games$round_name == games[round_i[1], "round_name"] / 2)
-    games[next_round_i, c("team", "seed", "elo")] = games[winners_i, c("team", "seed", "elo")]
+    games[next_round_i, c("team", "seed", "elo")] = subset(games[round_i,], winner == T, select = c("team", "seed", "elo"))
   }
 
   return(games)
@@ -81,9 +79,15 @@ entry_score = function(entry, result) {
   return(sum(game_points[matches]))
 }
 
+result_set = function(n, games_template) {
+  return(alply(1:n, 1, function(i) {
+    result = sim_tourney(games_template)
+    return(list(result = result, sim_prob = prod(result[result$winner, "winprob"])))
+  }))
+}
+
 elod = load_elod()
 games_template = load_games_template(elod)
 
-entry = sim_tourney(games_template)
-result = sim_tourney(games_template)
-entry_score(entry, result)
+# entry = sim_tourney(games_template)
+# entry_score(entry, result)
